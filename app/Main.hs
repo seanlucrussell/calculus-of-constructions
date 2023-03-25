@@ -3,6 +3,7 @@
 module Main where
 
 import Coc
+import Data.Either (isLeft)
 import Nice
 
 identity :: NiceTerm
@@ -42,6 +43,7 @@ equalityPreservedByFunctionApplicationTheorem =
         )
     )
 
+-- this should type check
 equalityPreservedByFunctionApplicationProof :: NiceTerm
 equalityPreservedByFunctionApplicationProof =
   Fn
@@ -78,86 +80,25 @@ equalityPreservedByFunctionApplicationProof =
         )
     )
 
-(t0, t1) = ([RefFree 0, Prop], Pi (RefFree 1) (RefFree 0))
+-- a term that doesn't type check
+bad :: Term
+bad = Lambda Prop (Lambda (Lambda (RefBound 0) (RefBound 0)) (RefBound 1))
 
--- this shouldn't type check, i think. but when type checking is run we get
---      Pi Prop (    Pi (Lambda (RefBound 0)                                    (RefBound 0)) Prop)
-w = Lambda Prop (Lambda (Apply (Lambda Prop (Lambda (RefBound 0) (RefBound 0))) (RefBound 0)) (RefBound 1))
-
-x =
-  Lambda
-    Prop
-    ( Lambda
-        Prop
-        ( Lambda
-            ( Pi
-                (RefBound 1)
-                (RefBound 1)
-            )
-            ( Lambda
-                (RefBound 2)
-                ( Lambda
-                    (RefBound 3)
-                    ( Lambda
-                        ( Apply
-                            ( Apply
-                                (RefBound 3)
-                                (RefBound 1)
-                            )
-                            (RefBound 0)
-                        )
-                        ( Apply
-                            ( Apply
-                                (RefBound 0)
-                                ( Lambda
-                                    (RefBound 5)
-                                    ( Apply
-                                        ( Apply
-                                            (RefBound 4)
-                                            ( Apply
-                                                (RefBound 4)
-                                                (RefBound 3)
-                                            )
-                                        )
-                                        ( Apply
-                                            (RefBound 4)
-                                            (RefBound 0)
-                                        )
-                                    )
-                                )
-                            )
-                            ( Apply
-                                (RefBound 3)
-                                ( Apply
-                                    (RefBound 3)
-                                    (RefBound 2)
-                                )
-                            )
-                        )
-                    )
-                )
-            )
-        )
-    )
-
-breakCtx =
-  [ Apply (Apply (Apply (Lambda Prop (Lambda (RefBound 0) (Lambda (RefBound 1) (Pi (Pi (RefBound 2) Prop) (Pi (Apply (RefBound 0) (RefBound 2)) (Apply (RefBound 1) (RefBound 2))))))) (RefFree 0)) (RefFree 3)) (RefFree 4),
-    RefFree 0,
-    RefFree 0,
-    Pi (RefFree 0) (RefFree 1),
-    Prop,
-    Prop
-  ]
-
-breakTerm =
-  Apply (RefFree 5) (Lambda (RefFree 0) (Apply (Apply (Apply (Lambda Prop (Lambda (RefBound 0) (Lambda (RefBound 1) (Pi (Pi (RefBound 2) Prop) (Pi (Apply (RefBound 0) (RefBound 2)) (Apply (RefBound 1) (RefBound 2))))))) (RefFree 1)) (Apply (RefFree 2) (RefFree 3))) (Apply (RefFree 2) (RefBound 0))))
-
-typePretty :: NiceTerm -> Either String Term
-typePretty term = case compile term of
+typeNice :: NiceTerm -> Either String Term
+typeNice term = case compile term of
   Left (context, term) -> Left ("Compilation failed:   context = " ++ show context ++ "   term = " ++ show term)
   Right te -> case typeOf te of
     Left (context, term) -> Left ("Type checking failed: context = " ++ show context ++ "   term = " ++ show term)
     Right te' -> Right te'
+
+tests :: Bool
+tests =
+  typeNice equality == Right (Pi Prop (Pi (RefBound 0) (Pi (RefBound 1) Prop)))
+    && typeNice identity == Right (Pi Prop (Pi (RefBound 0) (RefBound 1)))
+    && typeNice equalityIsReflexive == Right Prop
+    && typeNice equalityIsReflexiveProof == Right (Pi Prop (Pi (RefBound 0) (Pi (Pi (RefBound 1) Prop) (Pi (Apply (RefBound 0) (RefBound 1)) (Apply (RefBound 1) (RefBound 2))))))
+    && typeNice equalityPreservedByFunctionApplicationTheorem == Right Prop
+    && isLeft (typeOf bad)
 
 main :: IO ()
 main = putStrLn "Hello, Haskell!"

@@ -63,11 +63,22 @@ substitute replacement = flip (cata go) 0
 
 type TypeError = ([Term], Term)
 
+isSort :: Term -> Bool
+isSort s = s == Prop || s == Type
+
+lookupFreeVar :: [Term] -> Int -> Term
+lookupFreeVar ctx n = reverse ctx !! n
+
 typeWith :: [Term] -> Term -> Either TypeError Term
 typeWith ctx term =
   let error = Left (ctx, term)
+      assertSort s val = if isSort s then Right val else error
    in case term of
-        Prop -> Right Type
+        Prop -> case ctx of
+          [] -> Right Type
+          t : ts -> do
+            contextType <- typeWith ts t
+            assertSort contextType Type
         RefBound n -> do
           contextType <- typeWith ctx Prop
           if n <= length ctx && contextType == Type
@@ -76,19 +87,15 @@ typeWith ctx term =
         RefFree n -> do
           contextType <- typeWith ctx Prop
           if n <= length ctx && contextType == Type
-            then Right (ctx !! (length ctx - n - 1))
+            then Right (lookupFreeVar ctx n)
             else error
         Pi a b -> do
           s <- typeWith (a : ctx) (openReference (length ctx) b)
-          if s == Prop || s == Type
-            then Right s
-            else error
+          assertSort s s
         Lambda a m -> do
           b <- typeWith (a : ctx) (openReference (length ctx) m)
           s <- typeWith (a : ctx) b
-          if s == Prop || s == Type
-            then Right (Pi a (closeReference (length ctx) b))
-            else error
+          assertSort s (Pi a (closeReference (length ctx) b))
         Apply m n -> do
           m' <- typeWith ctx m
           a <- typeWith ctx n
