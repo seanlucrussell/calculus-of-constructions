@@ -7,10 +7,13 @@ module Coc where
 
 import Control.Monad (guard, (>=>))
 import Data.Either (isRight)
-import Data.Foldable (find)
+import Data.Foldable (find, fold)
 import Data.Functor.Foldable (Corecursive (embed), cata)
 import Data.Functor.Foldable.TH (MakeBaseFunctor (makeBaseFunctor))
+import Data.List (intercalate, intersperse)
 import Data.Maybe (isJust)
+import Data.Set (Set, singleton)
+import Debug.Trace
 
 data Term
   = Apply Term Term
@@ -24,55 +27,68 @@ data Term
 
 makeBaseFunctor ''Term
 
-openReference :: Int -> Term -> Term
+openReference :: Term -> Term -> Term
 openReference fresh = flip (cata go) 0
   where
     go :: TermF (Int -> Term) -> Int -> Term
-    go term n = case term of
-      LambdaF f g -> Lambda (f n) (g (n + 1))
-      PiF f g -> Pi (f n) (g (n + 1))
+    go term depth = case term of
+      LambdaF argType body -> Lambda (argType depth) (body (depth + 1))
+      PiF argType body -> Pi (argType depth) (body (depth + 1))
       RefBoundF i
-        | i == n -> RefFree fresh
+        | i == depth -> fresh
         | otherwise -> RefBound i
-      _ -> embed (fmap ($ n) term)
+      _ -> embed (fmap ($ depth) term)
 
 closeReference :: Int -> Term -> Term
 closeReference name = flip (cata go) 0
   where
     go :: TermF (Int -> Term) -> Int -> Term
-    go term n = case term of
-      LambdaF f g -> Lambda (f n) (g (n + 1))
-      PiF f g -> Pi (f n) (g (n + 1))
+    go term depth = case term of
+      LambdaF argType body -> Lambda (argType depth) (body (depth + 1))
+      PiF argType body -> Pi (argType depth) (body (depth + 1))
       RefFreeF i
-        | i == name -> RefBound n
+        | i == name -> RefBound depth
         | otherwise -> RefFree i
-      _ -> embed (fmap ($ n) term)
+      _ -> embed (fmap ($ depth) term)
 
-substitute :: Term -> Term -> Term
-substitute replacement = flip (cata go) 0
-  where
-    go :: TermF (Int -> Term) -> Int -> Term
-    go term d = case term of
-      RefBoundF m
-        | d == m -> replacement
-        | d < m -> RefBound (m -1)
-        | d > m -> RefBound m
-      LambdaF f g -> Lambda (f d) (g (d + 1))
-      PiF f g -> Pi (f d) (g (d + 1))
-      _ -> embed (fmap ($ d) term)
+sub :: Int -> Term -> Term -> Term
+sub name replacement = openReference replacement . closeReference name
 
-type TypeError = ([Term], Term)
+locallyClosed :: Term -> Bool
+locallyClosed = flip (cata go) 0
+ where
+  go :: TermF (Int -> Bool) -> Int -> Bool
+  go (RefBoundF n) depth = n <= depth
+  go (LambdaF argType body) depth = argType depth && body (depth + 1)
+  go (PiF argType body) depth = argType depth && body (depth + 1)
+  go term depth = and (fmap ($ depth) term)
 
-isSort :: Term -> Bool
-isSort s = s == Prop || s == Type
+freeVars :: Term -> Set Int
+freeVars = cata go
+  where go :: TermF (Set Int) -> Set Int
+        go (RefFreeF i) = singleton i
+        go term = fold term
 
-lookupFreeVar :: [Term] -> Int -> Term
-lookupFreeVar ctx n = reverse ctx !! n
+freshVar :: Term -> Int
+freshVar term = head (filter (`notElem` freeVars term) [0..])
 
-typeWith :: [Term] -> Term -> Either TypeError Term
+norm :: Term -> Term
+norm term = case term of
+  Apply function arg -> case norm function of
+    Lambda _ body -> norm (openReference (norm arg) body)
+    _ -> Apply (norm function) (norm arg)
+  Pi argType body -> 
+    let f = freshVar body 
+    in Pi (norm argType) (closeReference f (norm (openReference (RefFree f) body)))
+  Lambda argType body -> 
+    let f = freshVar body 
+    in Lambda (norm argType) (closeReference f (norm (openReference (RefFree f) body)))
+  _ -> term
+
+typeWith :: [Term] -> Term -> Either ([Term], Term) Term
 typeWith ctx term =
   let error = Left (ctx, term)
-      assertSort s val = if isSort s then Right val else error
+      assertSort s val = if s == Prop || s == Type then Right val else error
    in case term of
         Prop -> case ctx of
           [] -> Right Type
@@ -87,34 +103,25 @@ typeWith ctx term =
         RefFree n -> do
           contextType <- typeWith ctx Prop
           if n <= length ctx && contextType == Type
-            then Right (lookupFreeVar ctx n)
+            then Right (reverse ctx !! n)
             else error
         Pi a b -> do
-          s <- typeWith (a : ctx) (openReference (length ctx) b)
+          s <- typeWith (a : ctx) (openReference (RefFree (length ctx)) b)
           assertSort s s
         Lambda a m -> do
-          b <- typeWith (a : ctx) (openReference (length ctx) m)
+          b <- typeWith (a : ctx) (openReference (RefFree (length ctx)) m)
           s <- typeWith (a : ctx) b
           assertSort s (Pi a (closeReference (length ctx) b))
         Apply m n -> do
           m' <- typeWith ctx m
           a <- typeWith ctx n
-          case eval m' of
+          case norm m' of
             Pi a' b ->
               if a' == a
-                then Right (substitute n b)
+                then Right (sub (length ctx - 1) n b)
                 else error
             _ -> error
         Type -> error
 
-typeOf :: Term -> Either TypeError Term
+typeOf :: Term -> Either ([Term], Term) Term
 typeOf = typeWith []
-
-eval :: Term -> Term
-eval (Pi a b) = Pi (eval a) (eval b)
-eval (Lambda a b) = Lambda (eval a) (eval b)
-eval (Apply a b) = case eval a of
-  Lambda _ d -> eval (substitute d b)
-  Pi _ d -> eval (substitute d b)
-  e -> Apply e (eval b)
-eval x = x

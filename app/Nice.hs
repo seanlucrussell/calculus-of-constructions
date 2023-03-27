@@ -15,6 +15,16 @@ data NiceTerm
   | Star
   deriving (Show)
 
+infixr 7 -->
+
+(-->) :: NiceTerm -> NiceTerm -> NiceTerm
+(-->) = Implies
+
+infixl 8 ...
+
+(...) :: NiceTerm -> NiceTerm -> NiceTerm
+(...) = App
+
 pretty :: Term -> String
 pretty (Lambda a b) = "\\" ++ pretty a ++ "." ++ pretty b
 pretty (RefFree n) = "free" ++ show n
@@ -61,6 +71,13 @@ compileWith ctx term = case term of
 
 compile :: NiceTerm -> Either ([Maybe String], NiceTerm) Term
 compile = compileWith []
+
+typeNice :: NiceTerm -> Either String Term
+typeNice term = case compile term of
+  Left (context, term) -> Left ("Compilation failed:   context = " ++ show context ++ "   term = " ++ show term)
+  Right te -> case typeOf te of
+    Left (context, term) -> Left ("Type checking failed: context = " ++ show context ++ "   term = " ++ show term)
+    Right te' -> Right te'
 
 instance IsString NiceTerm where
   fromString = Reference
