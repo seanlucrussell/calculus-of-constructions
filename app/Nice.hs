@@ -79,5 +79,8 @@ typeNice term = case compile term of
     Left (context, term) -> Left ("Type checking failed: context = " ++ show context ++ "   term = " ++ show term)
     Right te' -> Right te'
 
+normNice :: NiceTerm -> Either ([Maybe String], NiceTerm) Term
+normNice = fmap norm . compile
+
 instance IsString NiceTerm where
   fromString = Reference

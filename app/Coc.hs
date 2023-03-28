@@ -27,63 +27,48 @@ data Term
 
 makeBaseFunctor ''Term
 
-openReference :: Term -> Term -> Term
-openReference fresh = flip (cata go) 0
+open :: Term -> Term -> Term
+open fresh = flip (cata go) 0
   where
     go :: TermF (Int -> Term) -> Int -> Term
-    go term depth = case term of
-      LambdaF argType body -> Lambda (argType depth) (body (depth + 1))
-      PiF argType body -> Pi (argType depth) (body (depth + 1))
-      RefBoundF i
-        | i == depth -> fresh
-        | otherwise -> RefBound i
-      _ -> embed (fmap ($ depth) term)
+    go (RefBoundF i) depth
+      | i == depth = fresh
+      | otherwise = RefBound i
+    go (LambdaF argType body) depth = Lambda (argType depth) (body (depth + 1))
+    go (PiF argType body) depth = Pi (argType depth) (body (depth + 1))
+    go term depth = embed (fmap ($ depth) term)
 
-closeReference :: Int -> Term -> Term
-closeReference name = flip (cata go) 0
+close :: Int -> Term -> Term
+close name = flip (cata go) 0
   where
     go :: TermF (Int -> Term) -> Int -> Term
-    go term depth = case term of
-      LambdaF argType body -> Lambda (argType depth) (body (depth + 1))
-      PiF argType body -> Pi (argType depth) (body (depth + 1))
-      RefFreeF i
-        | i == name -> RefBound depth
-        | otherwise -> RefFree i
-      _ -> embed (fmap ($ depth) term)
+    go (RefFreeF i) depth
+      | i == name = RefBound depth
+      | otherwise = RefFree i
+    go (LambdaF argType body) depth = Lambda (argType depth) (body (depth + 1))
+    go (PiF argType body) depth = Pi (argType depth) (body (depth + 1))
+    go term depth = embed (fmap ($ depth) term)
 
 sub :: Int -> Term -> Term -> Term
-sub name replacement = openReference replacement . closeReference name
-
-locallyClosed :: Term -> Bool
-locallyClosed = flip (cata go) 0
- where
-  go :: TermF (Int -> Bool) -> Int -> Bool
-  go (RefBoundF n) depth = n <= depth
-  go (LambdaF argType body) depth = argType depth && body (depth + 1)
-  go (PiF argType body) depth = argType depth && body (depth + 1)
-  go term depth = and (fmap ($ depth) term)
+sub name replacement = open replacement . close name
 
 freeVars :: Term -> Set Int
-freeVars = cata go
-  where go :: TermF (Set Int) -> Set Int
-        go (RefFreeF i) = singleton i
-        go term = fold term
+freeVars = cata (\term -> case term of RefFreeF i -> singleton i; _ -> fold term)
 
 freshVar :: Term -> Int
-freshVar term = head (filter (`notElem` freeVars term) [0..])
+freshVar term = head (filter (`notElem` freeVars term) [0 ..])
 
 norm :: Term -> Term
-norm term = case term of
-  Apply function arg -> case norm function of
-    Lambda _ body -> norm (openReference (norm arg) body)
-    _ -> Apply (norm function) (norm arg)
-  Pi argType body -> 
-    let f = freshVar body 
-    in Pi (norm argType) (closeReference f (norm (openReference (RefFree f) body)))
-  Lambda argType body -> 
-    let f = freshVar body 
-    in Lambda (norm argType) (closeReference f (norm (openReference (RefFree f) body)))
-  _ -> term
+norm (Apply function arg) = case norm function of
+  Lambda _ body -> norm (open (norm arg) body)
+  _ -> Apply (norm function) (norm arg)
+norm (Pi argType body) =
+  let f = freshVar body
+   in Pi (norm argType) (close f (norm (open (RefFree f) body)))
+norm (Lambda argType body) =
+  let f = freshVar body
+   in Lambda (norm argType) (close f (norm (open (RefFree f) body)))
+norm term = term
 
 typeWith :: [Term] -> Term -> Either ([Term], Term) Term
 typeWith ctx term =
@@ -106,12 +91,12 @@ typeWith ctx term =
             then Right (reverse ctx !! n)
             else error
         Pi a b -> do
-          s <- typeWith (a : ctx) (openReference (RefFree (length ctx)) b)
+          s <- typeWith (a : ctx) (open (RefFree (length ctx)) b)
           assertSort s s
         Lambda a m -> do
-          b <- typeWith (a : ctx) (openReference (RefFree (length ctx)) m)
+          b <- typeWith (a : ctx) (open (RefFree (length ctx)) m)
           s <- typeWith (a : ctx) b
-          assertSort s (Pi a (closeReference (length ctx) b))
+          assertSort s (Pi a (close (length ctx) b))
         Apply m n -> do
           m' <- typeWith ctx m
           a <- typeWith ctx n
@@ -122,6 +107,41 @@ typeWith ctx term =
                 else error
             _ -> error
         Type -> error
+
+safeIndex :: [a] -> Int -> Maybe a
+safeIndex (x : xs) 0 = Just x
+safeIndex (_ : xs) n = safeIndex xs (n -1)
+safeIndex _ _ = Nothing
+
+typeWith' :: [Term] -> Term -> Maybe Term
+typeWith' [] Prop = Just Type
+typeWith' (t : ts) Prop = do
+  contextType <- typeWith' ts t
+  guard (contextType == Prop || contextType == Type)
+  Just Type
+typeWith' ctx (RefBound n) = do
+  contextType <- typeWith' ctx Prop
+  guard (contextType == Type)
+  safeIndex ctx n
+typeWith' ctx (RefFree n) = do
+  contextType <- typeWith' ctx Prop
+  guard (contextType == Type)
+  safeIndex (reverse ctx) n
+typeWith' ctx (Pi a b) = do
+  s <- typeWith' (a : ctx) (open (RefFree (length ctx)) b)
+  guard (s == Prop || s == Type)
+  Just s
+typeWith' ctx (Lambda a m) = do
+  b <- typeWith' (a : ctx) (open (RefFree (length ctx)) m)
+  s <- typeWith' (a : ctx) b
+  guard (s == Prop || s == Type)
+  Just (Pi a (close (length ctx) b))
+typeWith' ctx (Apply m n) = do
+  Pi a' b <- fmap norm (typeWith' ctx m)
+  a <- typeWith' ctx n
+  guard (a' == a)
+  Just (sub (length ctx - 1) n b)
+typeWith' ctx Type = Nothing
 
 typeOf :: Term -> Either ([Term], Term) Term
 typeOf = typeWith []
