@@ -21,23 +21,20 @@ hypotheticalSyllogismTheorem = ForAll "A" Star (ForAll "B" Star (ForAll "C" Star
 hypotheticalSyllogismProof :: NiceTerm
 hypotheticalSyllogismProof = Fn "A" Star (Fn "B" Star (Fn "C" Star (Fn "f" ("A" --> "B") (Fn "g" ("B" --> "C") (Fn "x" "A" ("g" ... ("f" ... "x")))))))
 
-product :: NiceTerm -> NiceTerm -> NiceTerm
-product a b = ForAll "C" Star ((a --> b --> "C") --> "C")
+product :: NiceTerm
+product = Fn "A" Star (Fn "B" Star (ForAll "C" Star (("A" --> "B" --> "C") --> "C")))
 
 pair :: NiceTerm
 pair = Fn "A" Star (Fn "B" Star (Fn "x" "A" (Fn "y" "B" (Fn "C" Star (Fn "f" ("A" --> "B" --> "C") ("f" ... "x" ... "y"))))))
 
-union :: NiceTerm -> NiceTerm -> NiceTerm
-union a b = ForAll "C" Star ((a --> "C") --> (b --> "C") --> "C")
-
-cases :: NiceTerm
-cases = Fn "A" Star (Fn "B" Star (Fn "u" (union "A" "B") (Fn "C" Star (Fn "f" ("A" --> "C") (Fn "g" ("B" --> "C") ("u" ... "C" ... "f" ... "g"))))))
+union :: NiceTerm
+union = Fn "A" Star (Fn "B" Star (ForAll "C" Star (("A" --> "C") --> ("B" --> "C") --> "C")))
 
 not :: NiceTerm -> NiceTerm
 not a = ForAll "C" Star (a --> "C")
 
 unionIsCommutative :: NiceTerm
-unionIsCommutative = ForAll "A" Star (ForAll "B" Star (union "A" "B" --> union "B" "A"))
+unionIsCommutative = ForAll "A" Star (ForAll "B" Star (union ... "A" ... "B" --> union ... "B" ... "A"))
 
 commuteUnion :: NiceTerm
 commuteUnion =
@@ -49,7 +46,7 @@ commuteUnion =
         Star
         ( Fn
             "x"
-            ("A" `union` "B")
+            (union ... "A" ... "B")
             ( Fn
                 "C"
                 Star
@@ -67,16 +64,16 @@ commuteUnion =
     )
 
 firstType :: NiceTerm
-firstType = ForAll "A" Star (ForAll "B" Star (product "A" "B" --> "A"))
+firstType = ForAll "A" Star (ForAll "B" Star (product ... "A" ... "B" --> "A"))
 
 first :: NiceTerm
-first = Fn "A" Star (Fn "B" Star (Fn "p" (product "A" "B") ("p" ... "A" ... Fn "x" "A" (Fn "y" "B" "x"))))
+first = Fn "A" Star (Fn "B" Star (Fn "p" (product ... "A" ... "B") ("p" ... "A" ... Fn "x" "A" (Fn "y" "B" "x"))))
 
 secondType :: NiceTerm
-secondType = ForAll "A" Star (ForAll "B" Star (product "A" "B" --> "B"))
+secondType = ForAll "A" Star (ForAll "B" Star (product ... "A" ... "B" --> "B"))
 
 second :: NiceTerm
-second = Fn "A" Star (Fn "B" Star (Fn "p" (product "A" "B") ("p" ... "B" ... Fn "x" "A" (Fn "y" "B" "y"))))
+second = Fn "A" Star (Fn "B" Star (Fn "p" (product ... "A" ... "B") ("p" ... "B" ... Fn "x" "A" (Fn "y" "B" "y"))))
 
 left :: NiceTerm
 left = Fn "A" Star (Fn "B" Star (Fn "x" "A" (Fn "C" Star (Fn "f" ("A" --> "C") (Fn "g" ("B" --> "C") ("f" ... "x"))))))
@@ -95,15 +92,34 @@ productDistributesOverUnion =
         ( ForAll
             "R"
             Star
-            ( ("P" `product` ("Q" `union` "R"))
-                --> (("P" `product` "Q") `union` ("P" `product` "R"))
+            ( product ... "P" ... (union ... "Q" ... "R")
+                --> union ... (product ... "P" ... "Q") ... (product ... "P" ... "R")
             )
         )
     )
 
--- distributeProductOverUnion =
---  \(P:*)(Q:*)(R:*)(a:product P (union Q R)).
--- (second P (union Q R) a) (union (product P Q) (product P R))  (\q:Q. left (product P Q) (product P R) (pair P Q (first P (union Q R) a) q))  (\r:R. right (product P Q) (product P R) (pair P R (first P (union Q R) a) r))
+productDistributesOverUnion' :: NiceTerm
+productDistributesOverUnion' =
+  ForAll
+    "P"
+    Star
+    ( ForAll
+        "Q"
+        Star
+        ( ForAll
+            "R"
+            Star
+            ( Fn
+                "Pand"
+                (ForAll "B" Star Star)
+                ( "Pand" ... (union ... "Q" ... "R")
+                    --> union ... ("Pand" ... "Q") ... ("Pand" ... "R")
+                )
+                ... (product ... "P")
+            )
+        )
+    )
+
 distributeProductOverUnion :: NiceTerm
 distributeProductOverUnion =
   Fn
@@ -117,16 +133,16 @@ distributeProductOverUnion =
             Star
             ( Fn
                 "a"
-                ("P" `product` ("Q" `union` "R"))
-                ( (second ... "P" ... union "Q" "R" ... "a") ... union (product "P" "Q") (product "P" "R")
+                (product ... "P" ... (union ... "Q" ... "R"))
+                ( second ... "P" ... (union ... "Q" ... "R") ... "a" ... (union ... (product ... "P" ... "Q") ... (product ... "P" ... "R"))
                     ... Fn
                       "q"
                       "Q"
-                      (left ... product "P" "Q" ... product "P" "R" ... (pair ... "P" ... "Q" ... (first ... "P" ... union "Q" "R" ... "a") ... "q"))
+                      (left ... (product ... "P" ... "Q") ... (product ... "P" ... "R") ... (pair ... "P" ... "Q" ... (first ... "P" ... (union ... "Q" ... "R") ... "a") ... "q"))
                     ... Fn
                       "r"
                       "R"
-                      (right ... product "P" "Q" ... product "P" "R" ... (pair ... "P" ... "R" ... (first ... "P" ... union "Q" "R" ... "a") ... "r"))
+                      (right ... (product ... "P" ... "Q") ... (product ... "P" ... "R") ... (pair ... "P" ... "R" ... (first ... "P" ... (union ... "Q" ... "R") ... "a") ... "r"))
                 )
             )
         )

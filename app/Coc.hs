@@ -5,15 +5,11 @@
 
 module Coc where
 
-import Control.Monad (guard, (>=>))
-import Data.Either (isRight)
-import Data.Foldable (find, fold)
+import Control.Monad (guard)
+import Data.Foldable (fold)
 import Data.Functor.Foldable (Corecursive (embed), cata)
 import Data.Functor.Foldable.TH (MakeBaseFunctor (makeBaseFunctor))
-import Data.List (intercalate, intersperse)
-import Data.Maybe (isJust)
 import Data.Set (Set, singleton)
-import Debug.Trace
 
 data Term
   = Apply Term Term
@@ -31,23 +27,19 @@ open :: Term -> Term -> Term
 open fresh = flip (cata go) 0
   where
     go :: TermF (Int -> Term) -> Int -> Term
-    go (RefBoundF i) depth
-      | i == depth = fresh
-      | otherwise = RefBound i
+    go (RefBoundF i) depth = if i == depth then fresh else RefBound i
     go (LambdaF argType body) depth = Lambda (argType depth) (body (depth + 1))
     go (PiF argType body) depth = Pi (argType depth) (body (depth + 1))
-    go term depth = embed (fmap ($ depth) term)
+    go term depth = embed (sequence term depth)
 
 close :: Int -> Term -> Term
 close name = flip (cata go) 0
   where
     go :: TermF (Int -> Term) -> Int -> Term
-    go (RefFreeF i) depth
-      | i == name = RefBound depth
-      | otherwise = RefFree i
+    go (RefFreeF i) depth = if i == name then RefBound depth else RefFree i
     go (LambdaF argType body) depth = Lambda (argType depth) (body (depth + 1))
     go (PiF argType body) depth = Pi (argType depth) (body (depth + 1))
-    go term depth = embed (fmap ($ depth) term)
+    go term depth = embed (sequence term depth)
 
 sub :: Int -> Term -> Term -> Term
 sub name replacement = open replacement . close name
@@ -62,12 +54,12 @@ norm :: Term -> Term
 norm (Apply function arg) = case norm function of
   Lambda _ body -> norm (open (norm arg) body)
   _ -> Apply (norm function) (norm arg)
-norm (Pi argType body) =
-  let f = freshVar body
-   in Pi (norm argType) (close f (norm (open (RefFree f) body)))
-norm (Lambda argType body) =
-  let f = freshVar body
-   in Lambda (norm argType) (close f (norm (open (RefFree f) body)))
+norm (Pi argType body) = Pi (norm argType) (close f (norm (open (RefFree f) body)))
+  where
+    f = freshVar body
+norm (Lambda argType body) = Lambda (norm argType) (close f (norm (open (RefFree f) body)))
+  where
+    f = freshVar body
 norm term = term
 
 typeWith :: [Term] -> Term -> Either ([Term], Term) Term
@@ -102,7 +94,7 @@ typeWith ctx term =
           a <- typeWith ctx n
           case norm m' of
             Pi a' b ->
-              if a' == a
+              if a' == norm a
                 then Right (sub (length ctx - 1) n b)
                 else error
             _ -> error
@@ -138,7 +130,7 @@ typeWith' ctx (Lambda a m) = do
   Just (Pi a (close (length ctx) b))
 typeWith' ctx (Apply m n) = do
   Pi a' b <- fmap norm (typeWith' ctx m)
-  a <- typeWith' ctx n
+  a <- fmap norm (typeWith' ctx n)
   guard (a' == a)
   Just (sub (length ctx - 1) n b)
 typeWith' ctx Type = Nothing

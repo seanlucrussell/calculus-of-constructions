@@ -35,12 +35,15 @@ pretty Prop = "*"
 pretty Type = "?"
 
 prettyNice :: NiceTerm -> String
-prettyNice (Fn n a b) = "\\(" ++ n ++ ":" ++ prettyNice a ++ ")." ++ prettyNice b
+prettyNice (Fn n a b) = "(\\(" ++ n ++ ":" ++ prettyNice a ++ ")." ++ prettyNice b ++ ")"
 prettyNice (Reference s) = s
-prettyNice (ForAll n a b) = "forall " ++ n ++ ":" ++ prettyNice a ++ "." ++ prettyNice b
+prettyNice (ForAll n a b) = "(forall " ++ n ++ ":" ++ prettyNice a ++ "." ++ prettyNice b ++ ")"
 prettyNice (Implies a b) = "(" ++ prettyNice a ++ "->" ++ prettyNice b ++ ")"
 prettyNice (App a b) = "(" ++ prettyNice a ++ " " ++ prettyNice b ++ ")"
 prettyNice Star = "*"
+
+out :: NiceTerm -> IO ()
+out = putStrLn . prettyNice
 
 compileWith :: [Maybe String] -> NiceTerm -> Either ([Maybe String], NiceTerm) Term
 compileWith ctx term = case term of
@@ -71,6 +74,16 @@ compileWith ctx term = case term of
 
 compile :: NiceTerm -> Either ([Maybe String], NiceTerm) Term
 compile = compileWith []
+
+uncompileWith :: [String] -> Term -> NiceTerm
+uncompileWith ctx term = case term of
+  Apply te te' -> App (uncompileWith ctx te) (uncompileWith ctx te')
+  Lambda te te' -> Fn ("v" ++ show (length ctx + 1)) (uncompileWith ctx te) (uncompileWith (("v" ++ show (length ctx + 1)) : ctx) te')
+  Pi te te' -> ForAll ("v" ++ show (length ctx + 1)) (uncompileWith ctx te) (uncompileWith (("v" ++ show (length ctx + 1)) : ctx) te')
+  RefFree n -> error "Unexpected free reference"
+  RefBound n -> Reference (ctx !! n)
+  Prop -> Star
+  Type -> error "Not supposed to have type in expression"
 
 typeNice :: NiceTerm -> Either String Term
 typeNice term = case compile term of
