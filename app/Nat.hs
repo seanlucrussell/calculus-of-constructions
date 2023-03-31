@@ -12,8 +12,8 @@ nat = ForAll "A" Star (("A" --> "A") --> "A" --> "A")
 zero :: NiceTerm
 zero = Fn "A" Star (Fn "s" ("A" --> "A") (Fn "z" "A" "z"))
 
-succ :: NiceTerm
-succ = Fn "n" nat (Fn "A" Star (Fn "s" ("A" --> "A") (Fn "z" "A" ("s" ... ("n" ... "A" ... "s" ... "z")))))
+suc :: NiceTerm
+suc = Fn "n" nat (Fn "A" Star (Fn "s" ("A" --> "A") (Fn "z" "A" ("s" ... ("n" ... "A" ... "s" ... "z")))))
 
 add :: NiceTerm
-add = Fn "n" nat (Fn "m" nat ("n" ... nat ... succ ... "m"))
+add = Fn "n" nat (Fn "m" nat ("n" ... nat ... suc ... "m"))

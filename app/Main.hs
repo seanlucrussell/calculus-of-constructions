@@ -3,9 +3,11 @@
 module Main where
 
 import Boolean
+import Box
 import Coc
 import Data.Either (fromRight, isLeft, isRight)
 import Equality
+import List
 import Logic
 import Nat
 import Nice
@@ -30,7 +32,7 @@ tests =
     equalityPreservedByFunctionApplicationProof `hasType` equalityPreservedByFunctionApplicationTheorem,
     hypotheticalSyllogismProof `hasType` hypotheticalSyllogismTheorem,
     zero `hasType` nat,
-    succ `hasType` (nat --> nat),
+    suc `hasType` (nat --> nat),
     add `hasType` (nat --> nat --> nat),
     isLeft (typeOf bad),
     true `hasType` boolean,
@@ -38,7 +40,13 @@ tests =
     commuteUnion `hasType` unionIsCommutative,
     second `hasType` secondType,
     first `hasType` firstType,
-    distributeProductOverUnion `hasType` productDistributesOverUnion
+    distributeProductOverUnion `hasType` productDistributesOverUnion,
+    (emptyBox ... boolean) `hasType` (box ... boolean ... zero),
+    emptyBox `hasType` emptyBoxConstructorType,
+    (nil ... boolean) `hasType` (list ... boolean),
+    len `hasType` lenType,
+    buildBox `hasType` buildBoxType,
+    exampleBox `hasType` (box ... boolean ... (suc ... (suc ... zero))) -- (389.45 secs, 275,075,217,256 bytes)
   ]
 
 main :: IO ()
